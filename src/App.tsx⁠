@@ -1,0 +1,223 @@
+import React, { useState } from 'react';
+import { Package, ShoppingCart, Plus, RefreshCw, Layers, Zap, LogIn, Database } from 'lucide-react';
+
+// --- Types ---
+interface Batch {
+  id: string;
+  lotNumber: string;
+  quantity: number;
+  costPrice: number;
+  receivedDate: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  barcode: string;
+  sellingPrice: number;
+  batches: Batch[];
+}
+
+// --- Sample Data (for testing) ---
+const initialProducts: Product[] = [
+  {
+    id: '1',
+    name: 'นมสด 1L',
+    barcode: '8850001',
+    sellingPrice: 45,
+    batches: [
+      { id: 'b1', lotNumber: 'LOT-001', quantity: 10, costPrice: 30, receivedDate: '2026-03-01' },
+      { id: 'b2', lotNumber: 'LOT-002', quantity: 15, costPrice: 32, receivedDate: '2026-03-05' },
+    ]
+  },
+  {
+    id: '2',
+    name: 'ไข่ไก่ แพ็ก 10 ฟอง',
+    barcode: '8850002',
+    sellingPrice: 95,
+    batches: [
+      { id: 'b3', lotNumber: 'LOT-001', quantity: 20, costPrice: 70, receivedDate: '2026-03-01' },
+    ]
+  }
+];
+
+// --- FIFO Logic Functions ---
+const addStock = (products: Product[], productName: string, quantity: number, costPrice: number): Product[] => {
+  const newBatch: Batch = {
+    id: Date.now().toString(),
+    lotNumber: `LOT-${Math.floor(1000 + Math.random() * 9000)}`,
+    quantity,
+    costPrice,
+    receivedDate: new Date().toISOString().split('T')[0]
+  };
+
+  const existingProduct = products.find(p => p.name.trim() === productName.trim());
+
+  if (existingProduct) {
+    return products.map(p => 
+      p.id === existingProduct.id 
+        ? { ...p, batches: [...p.batches, newBatch] }
+        : p
+    );
+  } else {
+    const newProduct: Product = {
+      id: Date.now().toString(),
+      name: productName,
+      barcode: Math.floor(100000000000 + Math.random() * 90000000000).toString(),
+      sellingPrice: costPrice * 1.5, // 50% mockup margin
+      batches: [newBatch]
+    };
+    return [...products, newProduct];
+  }
+};
+
+const sellProductFIFO = (products: Product[], productId: string, qtyToSell: number): Product[] => {
+  return products.map(product => {
+    if (product.id !== productId) return product;
+
+    const updatedBatches: Batch[] = [];
+    let remainingToSell = qtyToSell;
+
+    for (const batch of product.batches) {
+      if (remainingToSell <= 0) {
+        updatedBatches.push(batch);
+      } else if (batch.quantity <= remainingToSell) {
+        remainingToSell -= batch.quantity;
+      } else {
+        updatedBatches.push({ ...batch, quantity: batch.quantity - remainingToSell });
+        remainingToSell = 0;
+      }
+    }
+
+    return { ...product, batches: updatedBatches };
+  });
+};
+
+// --- Main App Component ---
+export default function App() {
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [productName, setProductName] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [costPrice, setCostPrice] = useState('');
+  const [sellingPrice, setSellingPrice] = useState(''); // Added sellingPrice state
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [sellQuantity, setSellQuantity] = useState('');
+
+  const handleAddStock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productName || !quantity || !costPrice) return;
+    const updatedProducts = addStock(products, productName, Number(quantity), Number(costPrice));
+    setProducts(updatedProducts);
+    setProductName('');
+    setQuantity('');
+    setCostPrice('');
+  };
+
+  const handleSellProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductId || !sellQuantity || Number(sellQuantity) <= 0) return;
+    const updatedProducts = sellProductFIFO(products, selectedProductId, Number(sellQuantity));
+    setProducts(updatedProducts);
+    setSelectedProductId('');
+    setSellQuantity('');
+  };
+
+  const handleManualPriceAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productName || !quantity || !costPrice || !sellingPrice) return;
+    const updatedProducts = addStock(products, productName, Number(quantity), Number(costPrice));
+    
+    // For manual add, we override the default mockup margin price
+    const productIndex = updatedProducts.findIndex(p => p.name === productName);
+    if(productIndex !== -1) {
+        updatedProducts[productIndex].sellingPrice = Number(sellingPrice);
+    } else {
+        // If it was a new product, we need to find its actual index by finding the new batch
+        // A better approach is to handle it inside the addStock function itself.
+        // For simplicity here, just set it to the last added.
+        updatedProducts[updatedProducts.length - 1].sellingPrice = Number(sellingPrice);
+    }
+    
+    setProducts(updatedProducts);
+    setProductName('');
+    setQuantity('');
+    setCostPrice('');
+    setSellingPrice('');
+  };
+
+  return (
+    <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '1000px', margin: '0 auto', color: '#333' }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '30px', padding: '15px', background: '#f8fafc', borderRadius: '8px' }}>
+        <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>📦 Groceri <span style={{color: '#22c55e', fontSize: '0.8em'}}>FIFO Stock</span></h1>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button style={{ padding: '8px 12px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}><Database size={16}/> Load</button>
+          <button style={{ padding: '8px 12px', background: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Sheet</button>
+        </div>
+      </header>
+      
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px', marginBottom: '35px' }}>
+        {/* Receiving Section */}
+        <section style={{ border: '1px solid #e2e8f0', padding: '20px', borderRadius: '8px', background: '#fff' }}>
+          <h2 style={{ color: '#22c55e', display: 'flex', alignItems: 'center', gap: '8px' }}><Zap size={18} /> Quick Stock Add</h2>
+          <form onSubmit={handleManualPriceAdd} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <input type="text" placeholder="Product Name" value={productName} onChange={e => setProductName(e.target.value)} required style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+            <input type="number" placeholder="Cost per Unit (฿)" value={costPrice} onChange={e => setCostPrice(e.target.value)} required style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+            <input type="number" placeholder="Selling Price (฿)" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+            <input type="number" placeholder="Quantity Received" value={quantity} onChange={e => setQuantity(e.target.value)} required style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+            <button type="submit" style={{ padding: '10px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'center' }}><Plus size={16}/> Record Stock</button>
+          </form>
+        </section>
+
+        {/* Selling Section */}
+        <section style={{ border: '1px solid #e2e8f0', padding: '20px', borderRadius: '8px', background: '#fff' }}>
+          <h2 style={{ color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '8px' }}><ShoppingCart size={18} /> Sell Product</h2>
+          <form onSubmit={handleSellProduct} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <select value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)} required style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }}>
+              <option value="">-- Select Product --</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>{p.name} (Qty: {p.batches.reduce((sum, b) => sum + b.quantity, 0)})</option>
+              ))}
+            </select>
+            <input type="number" placeholder="Quantity to Sell" value={sellQuantity} onChange={e => setSellQuantity(e.target.value)} required style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} />
+            <button type="submit" style={{ padding: '10px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'center' }}><LogIn size={16} /> Record Sale (FIFO)</button>
+          </form>
+        </section>
+      </div>
+
+      {/* Inventory Display */}
+      <section style={{ border: '1px solid #e2e8f0', padding: '20px', borderRadius: '8px', background: '#fff' }}>
+        <h2 style={{ color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}><Layers size={20} /> Current Stock Inventory</h2>
+        {products.map(product => {
+          const totalStock = product.batches.reduce((acc, b) => acc + b.quantity, 0);
+          return (
+            <div key={product.id} style={{ border: '1px solid #f1f5f9', padding: '18px', borderRadius: '8px', marginBottom: '18px', background: '#f8fafc' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, color: '#111' }}>{product.name}</h3>
+                <span style={{ padding: '4px 10px', background: '#e0f2fe', color: '#0369a1', borderRadius: '20px', fontSize: '0.85em' }}>Barcode: {product.barcode}</span>
+              </div>
+              <div style={{ display: 'flex', gap: '30px', color: '#666', marginBottom: '15px' }}>
+                <p style={{ margin: 0 }}>Current Stock: <strong style={{ color: '#22c55e' }}>{totalStock} units</strong></p>
+                <p style={{ margin: 0 }}>Selling Price: <strong>{product.sellingPrice} ฿</strong></p>
+              </div>
+              
+              <h4 style={{ color: '#444', borderBottom: '1px solid #e2e8f0', paddingBottom: '5px' }}>Stock Batches (FIFO Order):</h4>
+              <ul style={{ listStyle: 'none', padding: 0 }}>
+                {product.batches.map((batch, index) => (
+                  <li key={batch.id} style={{ padding: '10px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '15px' }}>
+                        <span style={{ fontWeight: 'bold' }}>{batch.lotNumber}</span>
+                        <span>Date: {batch.receivedDate}</span>
+                        <span>Cost: {batch.costPrice} ฿</span>
+                        <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{batch.quantity} units</span>
+                    </div>
+                    {index === 0 && <span style={{ color: '#94a3b8', fontSize: '0.8em' }}>(Oldest)</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
